@@ -1,4 +1,5 @@
-import websocket
+import asyncio
+import websockets
 import json
 from src.config import Config
 
@@ -6,34 +7,45 @@ class DerivConnector:
     def __init__(self):
         self.ws = None
         
-    def connect(self):
+    async def connect(self):
         url = f"wss://ws.derivws.com/websockets/v3?app_id={Config.DERIV_APP_ID}"
         try:
-            self.ws = websocket.create_connection(url, timeout=10)
-            self.authorize()
-            print("✅ Connected to Deriv.")
+            # مهلة 15 ثانية للاتصال الأولي
+            self.ws = await asyncio.wait_for(websockets.connect(url), timeout=15)
+            print("✅ WebSocket Connected.")
+            await self.authorize()
+        except asyncio.TimeoutError:
+            raise Exception("❌ Timeout: Server did not respond to connection request.")
         except Exception as e:
-            print(f"❌ Connection Failed: {e}")
+            raise Exception(f"❌ Connection Failed: {str(e)}")
             
-    def authorize(self):
+    async def authorize(self):
         msg = {"authorize": Config.DERIV_PAT_DEMO}
-        self._send(msg)
-        res = self._receive()
+        await self._send(msg)
+        res = await self._receive(timeout=10) # مهلة 10 ثوانٍ للرد
+        
         if 'error' in res:
             raise Exception(f"Auth Error: {res['error']['message']}")
-        print(f"Authorized User ID: {res.get('authorize', {}).get('loginid')}")
         
-    def _send(self, data_dict):
+        login_id = res.get('authorize', {}).get('loginid')
+        currency = res.get('authorize', {}).get('currency')
+        balance = res.get('authorize', {}).get('balance')
+        print(f"🔐 Authorized User ID: {login_id}")
+        print(f"💰 Balance: {balance} {currency}")
+        
+    async def _send(self, data_dict):
         if self.ws:
-            self.ws.send(json.dumps(data_dict))
+            await self.ws.send(json.dumps(data_dict))
             
-    def _receive(self):
-        if self.ws:
-            raw = self.ws.recv()
+    async def _receive(self, timeout=10):
+        if not self.ws: return {}
+        try:
+            raw = await asyncio.wait_for(self.ws.recv(), timeout=timeout)
             return json.loads(raw)
-        return {}
+        except asyncio.TimeoutError:
+            raise Exception("❌ Timeout: No response received from server within limit.")
         
-    def get_latest_candles(self, count=None):
+    async def get_latest_candles(self, count=None):
         cnt = count or Config.HISTORY_COUNT
         msg = {
             "ticks_history": Config.SYMBOL,
@@ -42,6 +54,14 @@ class DerivConnector:
             "count": cnt,
             "end": "latest"
         }
-        self._send(msg)
-        res = self._receive()
+        await self._send(msg)
+        res = await self._receive(timeout=15) # مهلة أطول لجلب البيانات
+        
+        if 'error' in res:
+             raise Exception(f"Data Fetch Error: {res['error']['message']}")
+             
         return res.get('candles', [])
+
+    async def close(self):
+        if self.ws:
+            await self.ws.close()
