@@ -8,18 +8,21 @@ class DerivConnector:
         self.ws = None
         
     async def connect(self):
-        # العنوان الرسمي المستقر للبوتات الخارجية
-        url = f"wss://ws.binaryws.com/websockets/v3?app_id={Config.DERIV_APP_ID}"
+        # تغيير العنوان للخادم الرسمي الأوروبي المستقر
+        url = f"wss://ws.derivws.com/websockets/v3?app_id={Config.DERIV_APP_ID}"
         
-        # الترويسات الضرورية لتجنب الحظر الأمني (HTTP 520)
+        # إضافة الترويسات الكاملة لتجاوز الحماية
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Origin": "https://app.deriv.com"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Origin": "https://app.deriv.com",
+            "Accept": "*/*",
+            "Connection": "Upgrade",
+            "Upgrade": "websocket"
         }
         
         try:
             print(f"🔌 Attempting connection to {url}...")
-            # استخدام extra_headers بدلاً من additional_headers لإصلاح خطأ المكتبة
+            # استخدام extra_headers مع الترويسات الكاملة
             self.ws = await asyncio.wait_for(
                 websockets.connect(url, extra_headers=headers), 
                 timeout=15
